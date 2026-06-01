@@ -2,6 +2,8 @@
 
 一个本地运行的 HTML 汇报材料编辑器。它可以导入 HTML，在预览里直接编辑文字、图片和布局，使用内置模板生成页面，并导出干净的 HTML 文件。
 
+![HTML Report Editor screenshot](assets/screenshot-editor.jpg)
+
 ## 功能
 
 - 导入本地 `.html` / `.htm` 文件或粘贴 HTML 片段
@@ -39,14 +41,18 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 构建结果会生成在 `dist/HTML报告编辑器.app`。
 
+## Beta 下载
+
+当前版本建议作为 beta 预览使用。下载 GitHub Release 里的 `.zip` 后，解压并打开 `HTML报告编辑器.app`。
+
+如果 macOS 提示来自未知开发者，可以在 Finder 里右键 app，选择“打开”。后续如果面向更多普通用户分发，建议做正式签名和 notarization。
+
 ## 安全说明
 
 编辑模式会把导入 HTML 中的脚本置为不执行；交互模式会恢复并运行页面脚本。建议只在交互模式打开可信 HTML。
 
 所有导入、编辑、图片替换和导出都在本地完成，当前版本不会上传 HTML 或图片。
 
-## 发布前待定
+## 许可证
 
-- 选择开源许可证，例如 MIT 或 Apache-2.0
-- 准备截图或 GIF
-- 如需面向普通用户分发，建议制作 GitHub Release 的 `.zip` 或 `.dmg`
+MIT
