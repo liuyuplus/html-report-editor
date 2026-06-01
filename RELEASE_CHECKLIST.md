@@ -13,4 +13,4 @@
 - [x] Add screenshots or a short GIF to the README.
 - [x] Create a GitHub repository named `html-report-editor`.
 - [x] Push source only, not the built `.app`.
-- [ ] Attach a zipped `.app` or `.dmg` to a GitHub Release.
+- [x] Attach a zipped `.app` or `.dmg` to a GitHub Release.
