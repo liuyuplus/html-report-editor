@@ -1,0 +1,22 @@
+.DS_Store
+*.swp
+*.swo
+
+# macOS build artifacts
+dist/
+*.app/
+*.dmg
+*.zip
+
+# Swift / Xcode cache
+.build/
+.swiftpm/
+.swift-module-cache/
+.clang-module-cache/
+DerivedData/
+
+# Local scratch
+tmp/
+.tmp/
+screenshots/
+*.log
