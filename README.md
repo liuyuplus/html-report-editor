@@ -33,6 +33,39 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 然后访问 `http://127.0.0.1:8765/html-report-live-editor.html`。
 
+## Windows / Linux 使用方式
+
+当前 `.app` 发布包只适用于 macOS。Windows 和 Linux 用户可以直接运行网页版本：
+
+```bash
+git clone https://github.com/liuyuplus/html-report-editor.git
+cd html-report-editor/src
+```
+
+Windows:
+
+```powershell
+py -m http.server 8765 --bind 127.0.0.1
+```
+
+Linux:
+
+```bash
+python3 -m http.server 8765 --bind 127.0.0.1
+```
+
+然后在浏览器打开：
+
+```text
+http://127.0.0.1:8765/html-report-live-editor.html
+```
+
+如果没有 Python，也可以使用 Node.js：
+
+```bash
+npx serve src
+```
+
 ## 构建 macOS App
 
 ```bash
