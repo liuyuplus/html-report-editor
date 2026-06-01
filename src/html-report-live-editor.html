@@ -6117,10 +6117,10 @@
         const key = event.key;
         const targetElement = event.target && event.target.nodeType === 1 && typeof event.target.closest === "function" ? event.target : null;
         const isInspectorControl = Boolean(targetElement && targetElement.closest(".layout-panel"));
-        const typing = isTypingTarget(event.target) && !isInspectorControl;
+        const typing = isTypingTarget(event.target);
         const isPreviewDoc = event.target && event.target.ownerDocument === previewFrame.contentDocument;
         const targetTag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
-        const isNativeField = ["input", "textarea", "select"].includes(targetTag) && !isInspectorControl;
+        const isNativeField = ["input", "textarea", "select"].includes(targetTag);
 
         if (isMeta && key.toLowerCase() === "a" && activeTextEditRoot && activeTextEditRoot.isConnected && !isNativeField) {
           if (selectEditableContents(activeTextEditRoot)) {
