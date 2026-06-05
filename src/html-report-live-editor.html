@@ -2417,6 +2417,7 @@
       const INTERACTIVE_SANDBOX = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals";
       const THEME_MODES = ["auto", "light", "dark"];
       const PREVIEW_MODES = ["edit", "interact"];
+      const EDIT_BOOTSTRAP_DELAY = 180;
       const PM_TEMPLATE_PAGE_SELECTOR = ".slide[data-template='pm-issue-alignment']";
       const MANAGED_PAGE_SELECTOR = "[data-html-report-managed-page='true']";
       const GENERIC_PAGE_CANDIDATE_SELECTOR = ".slide, .page, [data-page], [data-screen-label]";
@@ -2458,6 +2459,8 @@
       let lastFormatPainterPoint = null;
       let historyStack = [];
       let lastHistorySnapshot = "";
+      let previewRenderId = 0;
+      let editBootstrapTimer = 0;
       let previewCanvasActive = false;
       let pageManager = null;
       let pageManagerList = null;
@@ -4231,10 +4234,12 @@
             padding: 24px !important;
           }
           html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR} {
-            position: relative !important;
             opacity: 1 !important;
             visibility: visible !important;
             animation: none !important;
+          }
+          html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}:not([data-html-report-live-editor-preserve-position="true"]) {
+            position: relative !important;
           }
           html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}.slide {
             display: grid !important;
@@ -7609,6 +7614,23 @@
         return previewMode === "interact" ? INTERACTIVE_SANDBOX : EDIT_SANDBOX;
       }
 
+      function freezeBootstrappedEditPreview(renderId) {
+        if (previewMode !== "edit" || previewFrame.dataset.editBootstrapId !== renderId) {
+          return;
+        }
+        const doc = previewFrame.contentDocument;
+        if (!doc || !doc.documentElement) {
+          previewFrame.style.pointerEvents = "";
+          return;
+        }
+
+        const renderedHtml = `<!doctype html>\n${doc.documentElement.outerHTML}`;
+        previewFrame.removeAttribute("data-edit-bootstrap-id");
+        previewFrame.srcdoc = preparePreviewDocument(renderedHtml, {
+          executeScripts: false
+        });
+      }
+
       function persistPreviewToSource() {
         if (activeTextOverlay) {
           commitTextOverlay();
@@ -7654,22 +7676,34 @@
 
       function renderPreview() {
         const source = sourceInput.value;
+        window.clearTimeout(editBootstrapTimer);
         if (!source.trim()) {
           clearSelection();
           app.classList.remove("pm-template-edit-visible");
           previewFrame.style.height = "";
+          previewFrame.style.pointerEvents = "";
+          previewFrame.removeAttribute("data-edit-bootstrap-id");
           previewFrame.removeAttribute("srcdoc");
           setEditorReady(false);
           setImportVisible(true);
           return;
         }
+        const renderId = String(++previewRenderId);
+        const bootstrappingEdit = previewMode === "edit";
         const safeHtml = preparePreviewDocument(source, {
-          executeScripts: previewMode === "interact"
+          executeScripts: previewMode === "interact" || bootstrappingEdit
         });
         setEditorReady(true);
         clearSelection();
         app.classList.remove("pm-template-edit-visible");
         previewFrame.style.height = "";
+        if (bootstrappingEdit) {
+          previewFrame.dataset.editBootstrapId = renderId;
+          previewFrame.style.pointerEvents = "none";
+        } else {
+          previewFrame.removeAttribute("data-edit-bootstrap-id");
+          previewFrame.style.pointerEvents = "";
+        }
         previewFrame.setAttribute("sandbox", previewSandbox());
         previewFrame.srcdoc = safeHtml;
         renderStatus.textContent = "正在渲染...";
@@ -8142,6 +8176,27 @@
           return;
         }
         page.setAttribute("data-html-report-managed-page", "true");
+        updateManagedPagePositionMetadata(page);
+      }
+
+      function updateManagedPagePositionMetadata(page) {
+        if (!page || page.nodeType !== Node.ELEMENT_NODE) {
+          return;
+        }
+        const win = page.ownerDocument && page.ownerDocument.defaultView;
+        const position = win ? win.getComputedStyle(page).position : "";
+        if (position === "absolute" || position === "fixed") {
+          page.setAttribute("data-html-report-live-editor-preserve-position", "true");
+        } else {
+          page.removeAttribute("data-html-report-live-editor-preserve-position");
+        }
+      }
+
+      function refreshManagedPagePositionMetadata(doc) {
+        if (!doc || !doc.body) {
+          return;
+        }
+        doc.querySelectorAll(MANAGED_PAGE_SELECTOR).forEach(updateManagedPagePositionMetadata);
       }
 
       function findGenericManagedPageCandidates(doc) {
@@ -8191,7 +8246,9 @@
         if (previewMode !== "edit") {
           return false;
         }
-        return ensureGenericManagedPages(doc);
+        const changed = ensureGenericManagedPages(doc);
+        refreshManagedPagePositionMetadata(doc);
+        return changed;
       }
 
       function getManagedPages(doc) {
@@ -8996,6 +9053,7 @@
         [clone, ...clone.querySelectorAll("*")].forEach((node) => {
           node.removeAttribute("contenteditable");
           node.removeAttribute("spellcheck");
+          node.removeAttribute("data-html-report-managed-page");
           node.classList.remove("html-report-selected", "html-report-multi-selected");
           [...node.attributes].forEach((attr) => {
             if (attr.name.startsWith("data-html-report-live-editor")) {
@@ -9084,10 +9142,22 @@
       previewFrame.addEventListener("load", () => {
         const doc = previewFrame.contentDocument;
         if (!doc || !doc.body) {
+          previewFrame.style.pointerEvents = "";
           renderStatus.textContent = "预览不可用";
           showToast("无法访问预览内容。", true);
           return;
         }
+        const editBootstrapId = previewFrame.dataset.editBootstrapId;
+        if (previewMode === "edit" && editBootstrapId) {
+          renderStatus.textContent = "正在初始化布局...";
+          window.clearTimeout(editBootstrapTimer);
+          editBootstrapTimer = window.setTimeout(() => {
+            freezeBootstrappedEditPreview(editBootstrapId);
+          }, EDIT_BOOTSTRAP_DELAY);
+          return;
+        }
+
+        previewFrame.style.pointerEvents = "";
         prepareManagedPagesForEdit(doc);
         const hasManagedPages = syncManagedPageChrome(doc);
         renderPageManager(doc);
