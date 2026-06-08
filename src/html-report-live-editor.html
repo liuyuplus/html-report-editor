@@ -774,7 +774,7 @@
     }
 
     .drop-zone {
-      min-height: 118px;
+      min-height: 84px;
       display: grid;
       place-items: center;
       gap: 8px;
@@ -782,7 +782,7 @@
       border-radius: var(--radius-md);
       background: var(--accent-soft);
       color: var(--accent-text);
-      padding: 18px;
+      padding: 14px;
       text-align: center;
     }
 
@@ -799,6 +799,47 @@
 
     .drop-hint {
       color: var(--accent-text);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .import-upload-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .resource-choice {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface-strong);
+    }
+
+    .resource-choice[hidden] {
+      display: none;
+    }
+
+    .resource-choice select {
+      min-width: 0;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 0 10px;
+      font: inherit;
+    }
+
+    .resource-choice-note {
+      grid-column: 1 / -1;
+      color: var(--muted);
       font-size: 12px;
       line-height: 1.45;
     }
@@ -1911,11 +1952,15 @@
                 </button>
               </div>
               <div class="drop-zone" id="dropZone">
-                <div>
-                  <div class="drop-title">拖入 HTML 文件，或点击上传</div>
-                  <div class="drop-hint">支持 .html / .htm；图片替换后会以内嵌 Base64 保存。</div>
+                <div class="import-upload-actions">
+                  <button class="button" id="uploadHtmlButton" type="button">选择 HTML/CSS</button>
+                  <button class="button" id="uploadResourceFolderButton" type="button">选择资源文件夹</button>
                 </div>
-                <button class="button" id="uploadHtmlButton" type="button">选择文件</button>
+              </div>
+              <div class="resource-choice" id="resourceChoice" hidden>
+                <select id="resourceHtmlSelect" aria-label="选择要导入的 HTML 页面"></select>
+                <button class="button primary" id="importResourceChoiceButton" type="button">导入选中页面</button>
+                <div class="resource-choice-note" id="resourceChoiceNote">文件夹里包含多个 HTML，请选择要编辑的页面。</div>
               </div>
               <textarea class="import-textarea" id="importTextarea" spellcheck="false" placeholder="也可以直接粘贴 HTML 代码..."></textarea>
               <div class="import-actions">
@@ -2314,7 +2359,8 @@
   </div>
 
   <input class="sr-only" id="imagePicker" type="file" accept="image/*">
-  <input class="sr-only" id="htmlFilePicker" type="file" accept=".html,.htm,text/html">
+  <input class="sr-only" id="htmlFilePicker" type="file" accept=".html,.htm,.css,text/html,text/css" multiple>
+  <input class="sr-only" id="resourceFolderPicker" type="file" webkitdirectory directory multiple>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <textarea class="text-edit-overlay" id="textEditOverlay" spellcheck="false" aria-label="编辑当前文字" hidden></textarea>
 
@@ -2332,6 +2378,11 @@
       const exportButton = document.getElementById("exportButton");
       const imagePicker = document.getElementById("imagePicker");
       const htmlFilePicker = document.getElementById("htmlFilePicker");
+      const resourceFolderPicker = document.getElementById("resourceFolderPicker");
+      const resourceChoice = document.getElementById("resourceChoice");
+      const resourceHtmlSelect = document.getElementById("resourceHtmlSelect");
+      const resourceChoiceNote = document.getElementById("resourceChoiceNote");
+      const importResourceChoiceButton = document.getElementById("importResourceChoiceButton");
       const sourceStats = document.getElementById("sourceStats");
       const editStats = document.getElementById("editStats");
       const imageStats = document.getElementById("imageStats");
@@ -2380,6 +2431,7 @@
       const sourceBackdrop = document.getElementById("sourceBackdrop");
       const applySourceButton = document.getElementById("applySourceButton");
       const uploadHtmlButton = document.getElementById("uploadHtmlButton");
+      const uploadResourceFolderButton = document.getElementById("uploadResourceFolderButton");
       const applyImportButton = document.getElementById("applyImportButton");
       const closeImportButton = document.getElementById("closeImportButton");
       const loadIssueTemplateButton = document.getElementById("loadIssueTemplateButton");
@@ -2451,6 +2503,7 @@
       let isClosingTextOverlay = false;
       let isReadingLayout = false;
       let pendingImageInsert = null;
+      let pendingResourceImport = null;
       let visualPatches = new Map();
       let clipboardElement = null;
       let clipboardElements = null;
@@ -2458,6 +2511,7 @@
       let formatPainterCursorTone = "light";
       let lastFormatPainterPoint = null;
       let historyStack = [];
+      let redoStack = [];
       let lastHistorySnapshot = "";
       let previewRenderId = 0;
       let editBootstrapTimer = 0;
@@ -3882,12 +3936,14 @@
           visualPatches.clear();
         }
         historyStack = [];
+        redoStack = [];
         lastHistorySnapshot = "";
         clipboardElement = null;
         clipboardElements = null;
         activeManagedPageIndex = 0;
         stopFormatPainter();
         selectedElements.clear();
+        clearResourceChoice();
         sourceInput.value = html;
         setEditorReady(true);
         setLayoutCollapsed(false);
@@ -3899,24 +3955,242 @@
         return true;
       }
 
-      function readHtmlFile(file) {
-        if (!file) {
+      function isHtmlImportFile(file) {
+        return Boolean(file && (file.type === "text/html" || /\.(html?|HTML?)$/.test(file.name || "")));
+      }
+
+      function isCssImportFile(file) {
+        return Boolean(file && (file.type === "text/css" || /\.css$/i.test(file.name || "")));
+      }
+
+      function safeDecodePath(value) {
+        try {
+          return decodeURI(value);
+        } catch {
+          return value;
+        }
+      }
+
+      function normalizeResourcePath(value) {
+        const raw = safeDecodePath(String(value || ""))
+          .replace(/\\/g, "/")
+          .replace(/^\/+/, "");
+        const parts = [];
+        raw.split("/").forEach((part) => {
+          if (!part || part === ".") {
+            return;
+          }
+          if (part === "..") {
+            parts.pop();
+            return;
+          }
+          parts.push(part);
+        });
+        return parts.join("/");
+      }
+
+      function fileResourcePath(file) {
+        return normalizeResourcePath(file && file.webkitRelativePath ? file.webkitRelativePath : (file ? file.name : ""));
+      }
+
+      function pathDirectory(path) {
+        const normalized = normalizeResourcePath(path);
+        const index = normalized.lastIndexOf("/");
+        return index >= 0 ? normalized.slice(0, index) : "";
+      }
+
+      function pathBasename(path) {
+        const normalized = normalizeResourcePath(path);
+        const index = normalized.lastIndexOf("/");
+        return index >= 0 ? normalized.slice(index + 1) : normalized;
+      }
+
+      function resourceDisplayName(file) {
+        return fileResourcePath(file) || (file && file.name) || "未命名 HTML";
+      }
+
+      function localResourceHref(href) {
+        const raw = String(href || "").trim();
+        if (!raw || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#|data:|mailto:|javascript:)/i.test(raw)) {
+          return "";
+        }
+        return raw.split("#")[0].split("?")[0];
+      }
+
+      function resolveResourcePath(baseDir, href) {
+        const localHref = localResourceHref(href);
+        if (!localHref) {
+          return "";
+        }
+        return normalizeResourcePath(`${baseDir ? `${baseDir}/` : ""}${localHref}`);
+      }
+
+      function readFileText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error(`读取失败：${file && file.name ? file.name : "文件"}`));
+          reader.readAsText(file);
+        });
+      }
+
+      function createImportResourceIndex(files) {
+        const records = files
+          .filter((file) => file && !/^\.(DS_Store|localized)$/i.test(file.name || ""))
+          .map((file) => {
+            const path = fileResourcePath(file);
+            return {
+              file,
+              path,
+              lowerPath: path.toLowerCase(),
+              lowerName: (file.name || "").toLowerCase()
+            };
+          });
+        const byPath = new Map();
+        const byName = new Map();
+        records.forEach((record) => {
+          if (record.path) {
+            byPath.set(record.lowerPath, record);
+          }
+          if (!byName.has(record.lowerName)) {
+            byName.set(record.lowerName, []);
+          }
+          byName.get(record.lowerName).push(record);
+        });
+        return { records, byPath, byName };
+      }
+
+      function findImportResource(index, baseDir, href) {
+        const resolved = resolveResourcePath(baseDir, href);
+        if (!resolved) {
+          return null;
+        }
+        const exact = index.byPath.get(resolved.toLowerCase());
+        if (exact) {
+          return exact;
+        }
+        const hrefPath = normalizeResourcePath(localResourceHref(href));
+        const lowerHrefPath = hrefPath.toLowerCase();
+        if (lowerHrefPath) {
+          const suffixMatches = index.records.filter((record) => {
+            return record.lowerPath === lowerHrefPath || record.lowerPath.endsWith(`/${lowerHrefPath}`);
+          });
+          if (suffixMatches.length === 1) {
+            return suffixMatches[0];
+          }
+        }
+        const sameName = index.byName.get(pathBasename(resolved).toLowerCase()) || [];
+        return sameName.length === 1 ? sameName[0] : null;
+      }
+
+      async function inlineStylesheetsFromResources(html, htmlFile, files) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(normalizeHtml(html), "text/html");
+        const htmlDir = pathDirectory(fileResourcePath(htmlFile));
+        const resourceIndex = createImportResourceIndex(files);
+        const links = [...doc.querySelectorAll("link[href]")].filter((link) => {
+          const rel = link.getAttribute("rel") || "";
+          return /\bstylesheet\b/i.test(rel);
+        });
+        let inlinedCount = 0;
+        const missing = [];
+
+        for (const link of links) {
+          const href = link.getAttribute("href") || "";
+          const resource = findImportResource(resourceIndex, htmlDir, href);
+          if (!resource || !isCssImportFile(resource.file)) {
+            if (localResourceHref(href)) {
+              missing.push(href);
+            }
+            continue;
+          }
+          const css = await readFileText(resource.file);
+          const style = doc.createElement("style");
+          style.setAttribute("data-html-report-live-editor-inlined-from", href);
+          style.textContent = `\n/* Inlined from ${href.replace(/\*\//g, "* /")} */\n${css}\n`;
+          link.replaceWith(style);
+          inlinedCount += 1;
+        }
+
+        return {
+          html: `<!doctype html>\n${doc.documentElement.outerHTML}`,
+          inlinedCount,
+          missing
+        };
+      }
+
+      function clearResourceChoice() {
+        pendingResourceImport = null;
+        resourceChoice.hidden = true;
+        resourceHtmlSelect.innerHTML = "";
+        resourceChoiceNote.textContent = "文件夹里包含多个 HTML，请选择要编辑的页面。";
+      }
+
+      function showResourceChoice(files, htmlFiles) {
+        const sortedHtmlFiles = [...htmlFiles].sort((a, b) => resourceDisplayName(a).localeCompare(resourceDisplayName(b), "zh-Hans-CN"));
+        pendingResourceImport = { files, htmlFiles: sortedHtmlFiles };
+        resourceHtmlSelect.innerHTML = "";
+        sortedHtmlFiles.forEach((file, index) => {
+          const option = document.createElement("option");
+          option.value = String(index);
+          option.textContent = resourceDisplayName(file);
+          resourceHtmlSelect.appendChild(option);
+        });
+        resourceChoiceNote.textContent = `检测到 ${sortedHtmlFiles.length} 个 HTML，请选择要编辑的页面；会自动匹配同目录 CSS。`;
+        resourceChoice.hidden = false;
+        resourceHtmlSelect.focus({ preventScroll: true });
+        showToast("文件夹里有多个 HTML，请选择一个页面。");
+      }
+
+      async function importHtmlFileWithResources(htmlFile, files) {
+        const html = await readFileText(htmlFile);
+        const result = await inlineStylesheetsFromResources(html, htmlFile, files);
+        clearResourceChoice();
+        importTextarea.value = "";
+        const cssNote = result.inlinedCount > 0 ? `，已内联 ${result.inlinedCount} 个 CSS` : "";
+        const missingNote = result.missing.length > 0 ? `；${result.missing.length} 个 CSS 未找到` : "";
+        loadHtmlContent(result.html, {
+          message: `已导入 ${htmlFile.name || "HTML 文件"}${cssNote}${missingNote}。`
+        });
+      }
+
+      async function importSelectedResourceChoice() {
+        if (!pendingResourceImport) {
           return;
         }
-        const isHtml = file.type === "text/html" || /\.(html?|HTML?)$/.test(file.name || "");
-        if (!isHtml) {
-          showToast("请选择 .html 或 .htm 文件。", true);
+        const selectedIndex = Number.parseInt(resourceHtmlSelect.value, 10);
+        const htmlFile = pendingResourceImport.htmlFiles[selectedIndex];
+        if (!htmlFile) {
+          showToast("请选择要导入的 HTML。", true);
           return;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-          loadHtmlContent(reader.result, { message: `已导入 ${file.name || "HTML 文件"}。` });
-          importTextarea.value = "";
-        };
-        reader.onerror = () => {
-          showToast("读取 HTML 文件失败。", true);
-        };
-        reader.readAsText(file);
+        try {
+          await importHtmlFileWithResources(htmlFile, pendingResourceImport.files);
+        } catch (error) {
+          showToast(error && error.message ? error.message : "导入资源文件夹失败。", true);
+        }
+      }
+
+      async function readImportFiles(fileList) {
+        const files = [...(fileList || [])].filter((file) => file && !/^\.(DS_Store|localized)$/i.test(file.name || ""));
+        if (!files.length) {
+          showToast("请选择 HTML 文件或资源文件夹。", true);
+          return;
+        }
+        const htmlFiles = files.filter(isHtmlImportFile);
+        if (!htmlFiles.length) {
+          showToast("没有找到 .html 或 .htm 文件。", true);
+          return;
+        }
+        if (htmlFiles.length > 1) {
+          showResourceChoice(files, htmlFiles);
+          return;
+        }
+        try {
+          await importHtmlFileWithResources(htmlFiles[0], files);
+        } catch (error) {
+          showToast(error && error.message ? error.message : "读取 HTML 文件失败。", true);
+        }
       }
 
       function normalizeHtml(input) {
@@ -5309,6 +5583,7 @@
         if (historyStack.length > 80) {
           historyStack.shift();
         }
+        redoStack = [];
         lastHistorySnapshot = snapshot;
         return true;
       }
@@ -5363,6 +5638,13 @@
           showToast("没有可撤销的操作。", true);
           return;
         }
+        const current = snapshotPreviewHtml();
+        if (current && current !== previous.html) {
+          redoStack.push({ label: previous.label, html: current });
+          if (redoStack.length > 80) {
+            redoStack.shift();
+          }
+        }
         visualPatches.clear();
         sourceInput.value = previous.html;
         lastHistorySnapshot = "";
@@ -5370,6 +5652,28 @@
           setPreviewMode("edit", { force: true, persist: false });
         }
         showToast(`已撤销：${previous.label}`);
+      }
+
+      function redoLastChange() {
+        const next = redoStack.pop();
+        if (!next) {
+          showToast("没有可取消撤销的操作。", true);
+          return;
+        }
+        const current = snapshotPreviewHtml();
+        if (current && current !== next.html) {
+          historyStack.push({ label: next.label, html: current });
+          if (historyStack.length > 80) {
+            historyStack.shift();
+          }
+        }
+        visualPatches.clear();
+        sourceInput.value = next.html;
+        lastHistorySnapshot = "";
+        if (!restorePreviewHtmlInPlace(next.html)) {
+          setPreviewMode("edit", { force: true, persist: false });
+        }
+        showToast(`已取消撤销：${next.label}`);
       }
 
       function syncSourceFromPreview() {
@@ -6126,6 +6430,12 @@
         const isPreviewDoc = event.target && event.target.ownerDocument === previewFrame.contentDocument;
         const targetTag = event.target && event.target.tagName ? event.target.tagName.toLowerCase() : "";
         const isNativeField = ["input", "textarea", "select"].includes(targetTag);
+        const isTextOverlayTarget = event.target === textEditOverlay;
+        const isSourceEditingTarget = Boolean(targetElement && targetElement.closest(".source-pane, .import-screen"));
+        const canUseEditorHistoryShortcut =
+          !isSourceEditingTarget &&
+          !(isTextOverlayTarget && activeTextOverlay) &&
+          (!isNativeField || isInspectorControl || isPreviewDoc);
 
         if (isMeta && key.toLowerCase() === "a" && activeTextEditRoot && activeTextEditRoot.isConnected && !isNativeField) {
           if (selectEditableContents(activeTextEditRoot)) {
@@ -6143,13 +6453,20 @@
           return;
         }
 
-        if (isMeta && key.toLowerCase() === "z" && !event.shiftKey && !typing) {
+        if (isMeta && key.toLowerCase() === "z" && !event.shiftKey && canUseEditorHistoryShortcut) {
           event.preventDefault();
+          event.stopPropagation();
           undoLastChange();
           return;
         }
 
-        const isTextOverlayTarget = event.target === textEditOverlay;
+        if (isMeta && key.toLowerCase() === "z" && event.shiftKey && canUseEditorHistoryShortcut) {
+          event.preventDefault();
+          event.stopPropagation();
+          redoLastChange();
+          return;
+        }
+
         const canUseTypographyShortcut = selectedElement &&
           selectedElement.isConnected &&
           (isPreviewDoc || isTextOverlayTarget || (!isInspectorControl && !isTypingTarget(event.target)));
@@ -9425,6 +9742,15 @@
         htmlFilePicker.click();
       });
 
+      uploadResourceFolderButton.addEventListener("click", () => {
+        resourceFolderPicker.value = "";
+        resourceFolderPicker.click();
+      });
+
+      importResourceChoiceButton.addEventListener("click", () => {
+        importSelectedResourceChoice();
+      });
+
       dropZone.addEventListener("click", (event) => {
         if (event.target.closest("button")) {
           return;
@@ -9448,11 +9774,15 @@
       });
 
       dropZone.addEventListener("drop", (event) => {
-        readHtmlFile(event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null);
+        readImportFiles(event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : []);
       });
 
       htmlFilePicker.addEventListener("change", () => {
-        readHtmlFile(htmlFilePicker.files && htmlFilePicker.files[0]);
+        readImportFiles(htmlFilePicker.files || []);
+      });
+
+      resourceFolderPicker.addEventListener("change", () => {
+        readImportFiles(resourceFolderPicker.files || []);
       });
 
       applyImportButton.addEventListener("click", () => {
