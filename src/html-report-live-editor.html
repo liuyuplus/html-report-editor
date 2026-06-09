@@ -534,6 +534,42 @@
       font-weight: 650;
     }
 
+    .zoom-controls {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 3px;
+    }
+
+    .zoom-button {
+      width: 28px;
+      min-height: 28px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+    }
+
+    .zoom-button:hover {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    .zoom-value {
+      min-width: 46px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      user-select: none;
+    }
+
     .workspace {
       display: block;
       min-height: 0;
@@ -715,9 +751,15 @@
       min-height: 0;
       border: 1px solid var(--line);
       border-radius: var(--radius-md);
-      overflow: hidden;
+      overflow: auto;
       background: var(--slate-1);
       box-shadow: var(--shadow);
+      overscroll-behavior: contain;
+    }
+
+    .frame-zoom-layer {
+      width: 100%;
+      height: 100%;
     }
 
     .import-screen {
@@ -879,6 +921,8 @@
       height: 100%;
       border: 0;
       background: #fbfefc;
+      transform: scale(var(--preview-zoom, 1));
+      transform-origin: 0 0;
     }
 
     .text-edit-overlay {
@@ -1508,6 +1552,24 @@
       font-weight: 650;
     }
 
+    .zoom-controls {
+      border: 0;
+      border-radius: 999px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 4px;
+    }
+
+    .zoom-button {
+      width: 30px;
+      min-height: 28px;
+      border-radius: 999px;
+    }
+
+    .zoom-value {
+      min-width: 48px;
+    }
+
     .chip,
     .selection-chip {
       border: 0;
@@ -1582,7 +1644,7 @@
     }
 
     .frame-wrap {
-      overflow: hidden;
+      overflow: auto;
     }
 
     .import-screen {
@@ -1724,7 +1786,7 @@
     .app.pm-template-edit-visible .frame-wrap {
       height: 100%;
       min-height: 0;
-      overflow: hidden;
+      overflow: auto;
     }
 
     .app.pm-template-edit-visible iframe {
@@ -1859,6 +1921,36 @@
           <button class="segment is-active" data-preview-mode="edit" type="button" role="tab" aria-selected="true">编辑</button>
           <button class="segment" data-preview-mode="interact" type="button" role="tab" aria-selected="false">交互</button>
         </div>
+        <div class="zoom-controls" aria-label="预览缩放">
+          <button class="button icon-only zoom-button" id="zoomOutButton" type="button" title="缩小预览" aria-label="缩小预览">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="M8 11h6"></path>
+                <path d="M16 16l5 5"></path>
+              </svg>
+            </span>
+          </button>
+          <span class="zoom-value" id="zoomLevelLabel">100%</span>
+          <button class="button icon-only zoom-button" id="zoomInButton" type="button" title="放大预览" aria-label="放大预览">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="M8 11h6"></path>
+                <path d="M11 8v6"></path>
+                <path d="M16 16l5 5"></path>
+              </svg>
+            </span>
+          </button>
+          <button class="button icon-only zoom-button" id="zoomResetButton" type="button" title="重置预览缩放" aria-label="重置预览缩放">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+                <path d="M3 4v5h5"></path>
+              </svg>
+            </span>
+          </button>
+        </div>
         <button class="button" id="showSourceButton" type="button" title="查看源码">
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -1933,7 +2025,9 @@
         </div>
         <div class="preview-shell">
           <div class="frame-wrap">
-            <iframe id="previewFrame" title="HTML preview" sandbox="allow-same-origin"></iframe>
+            <div class="frame-zoom-layer" id="frameZoomLayer">
+              <iframe id="previewFrame" title="HTML preview" sandbox="allow-same-origin"></iframe>
+            </div>
           </div>
           <section class="import-screen" id="importScreen" aria-label="导入 HTML">
             <div class="import-card" id="importCard">
@@ -2375,6 +2469,7 @@
       const importTextarea = document.getElementById("importTextarea");
       const dropZone = document.getElementById("dropZone");
       const previewFrame = document.getElementById("previewFrame");
+      const frameZoomLayer = document.getElementById("frameZoomLayer");
       const exportButton = document.getElementById("exportButton");
       const imagePicker = document.getElementById("imagePicker");
       const htmlFilePicker = document.getElementById("htmlFilePicker");
@@ -2394,6 +2489,10 @@
       const templateLibraryButton = document.getElementById("templateLibraryButton");
       const typographyPresetButton = document.getElementById("typographyPresetButton");
       const modeButtons = document.querySelectorAll("[data-preview-mode]");
+      const zoomOutButton = document.getElementById("zoomOutButton");
+      const zoomInButton = document.getElementById("zoomInButton");
+      const zoomResetButton = document.getElementById("zoomResetButton");
+      const zoomLevelLabel = document.getElementById("zoomLevelLabel");
       const modeHint = document.getElementById("modeHint");
       const layoutPanel = document.getElementById("layoutPanel");
       const closeLayoutPanel = document.getElementById("closeLayoutPanel");
@@ -2456,6 +2555,7 @@
 
       const LEGACY_STORAGE_KEY = "html-report-live-editor:v1";
       const THEME_KEY = "html-report-live-editor:theme";
+      const PREVIEW_ZOOM_KEY = "html-report-live-editor:preview-zoom";
       const CUSTOM_TEMPLATE_KEY = "html-report-live-editor:custom-templates:v1";
       const EDITABLE_SELECTOR = [
         "h1", "h2", "h3", "h4", "h5", "h6",
@@ -2469,10 +2569,12 @@
       const INTERACTIVE_SANDBOX = "allow-same-origin allow-scripts allow-forms allow-popups allow-modals";
       const THEME_MODES = ["auto", "light", "dark"];
       const PREVIEW_MODES = ["edit", "interact"];
+      const PREVIEW_ZOOM_LEVELS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
       const EDIT_BOOTSTRAP_DELAY = 180;
       const PM_TEMPLATE_PAGE_SELECTOR = ".slide[data-template='pm-issue-alignment']";
       const MANAGED_PAGE_SELECTOR = "[data-html-report-managed-page='true']";
-      const GENERIC_PAGE_CANDIDATE_SELECTOR = ".slide, .page, [data-page], [data-screen-label]";
+      const TAB_PAGE_CANDIDATE_SELECTOR = ".tab-page, [data-tab-page]";
+      const GENERIC_PAGE_CANDIDATE_SELECTOR = `.slide, .page, ${TAB_PAGE_CANDIDATE_SELECTOR}, [data-page], [data-screen-label]`;
       const PAGE_LAYER_DEFAULT_Z = 20;
       const PAGE_LAYER_MIN_Z = 1;
       const SMART_GUIDE_TOLERANCE = 5;
@@ -2494,6 +2596,7 @@
       let activeImage = null;
       let toastTimer = 0;
       let currentTheme = localStorage.getItem(THEME_KEY) || "auto";
+      let previewZoom = normalizePreviewZoom(Number(localStorage.getItem(PREVIEW_ZOOM_KEY)) || 1);
       let previewMode = "edit";
       let selectedElement = null;
       let selectedElements = new Set();
@@ -3879,6 +3982,94 @@
         popover.hidden = !popover.hidden;
       }
 
+      function normalizePreviewZoom(value) {
+        if (!Number.isFinite(value) || value <= 0) {
+          return 1;
+        }
+        return PREVIEW_ZOOM_LEVELS.reduce((closest, level) => {
+          return Math.abs(level - value) < Math.abs(closest - value) ? level : closest;
+        }, PREVIEW_ZOOM_LEVELS[0]);
+      }
+
+      function previewZoomIndex() {
+        return PREVIEW_ZOOM_LEVELS.findIndex((level) => Math.abs(level - previewZoom) < 0.001);
+      }
+
+      function syncPreviewZoomLayerSize() {
+        const wrap = frameZoomLayer.parentElement;
+        const wrapWidth = Math.max(1, wrap ? wrap.clientWidth : 0);
+        const wrapHeight = Math.max(1, wrap ? wrap.clientHeight : 0);
+        const height = Number(previewFrame.dataset.previewBaseHeight);
+        const minWidth = Number(previewFrame.dataset.previewMinWidth);
+        const frameWidth = Math.max(wrapWidth, Number.isFinite(minWidth) && minWidth > 0 ? minWidth : 0);
+
+        frameZoomLayer.style.width = `${Math.ceil(frameWidth * previewZoom)}px`;
+        previewFrame.style.width = `${Math.ceil(frameWidth)}px`;
+
+        if (Number.isFinite(height) && height > 0) {
+          frameZoomLayer.style.height = `${Math.ceil(height * previewZoom)}px`;
+          previewFrame.style.height = `${Math.ceil(height)}px`;
+          previewFrame.style.minHeight = `${Math.ceil(height)}px`;
+          return;
+        }
+        frameZoomLayer.style.height = `${Math.ceil(wrapHeight * previewZoom)}px`;
+        previewFrame.style.height = `${wrapHeight}px`;
+        previewFrame.style.minHeight = `${wrapHeight}px`;
+      }
+
+      function schedulePreviewZoomSync() {
+        const sync = () => {
+          syncPreviewZoomLayerSize();
+          updateTextOverlayPosition();
+          updateSelectionOverlay();
+        };
+        window.requestAnimationFrame(sync);
+        [80, 240].forEach((delay) => window.setTimeout(sync, delay));
+      }
+
+      function setPreviewFrameHeight(height) {
+        if (!Number.isFinite(height) || height <= 0) {
+          delete previewFrame.dataset.previewBaseHeight;
+        } else {
+          previewFrame.dataset.previewBaseHeight = String(Math.ceil(height));
+        }
+        syncPreviewZoomLayerSize();
+      }
+
+      function setPreviewFrameMinWidth(width) {
+        if (!Number.isFinite(width) || width <= 0) {
+          delete previewFrame.dataset.previewMinWidth;
+        } else {
+          previewFrame.dataset.previewMinWidth = String(Math.ceil(width));
+        }
+        syncPreviewZoomLayerSize();
+      }
+
+      function applyPreviewZoom(nextZoom, options = {}) {
+        previewZoom = normalizePreviewZoom(nextZoom);
+        document.documentElement.style.setProperty("--preview-zoom", String(previewZoom));
+        zoomLevelLabel.textContent = `${Math.round(previewZoom * 100)}%`;
+        const index = previewZoomIndex();
+        zoomOutButton.disabled = index <= 0;
+        zoomInButton.disabled = index >= PREVIEW_ZOOM_LEVELS.length - 1;
+        zoomResetButton.disabled = Math.abs(previewZoom - 1) < 0.001;
+        if (options.persist !== false) {
+          localStorage.setItem(PREVIEW_ZOOM_KEY, String(previewZoom));
+        }
+        syncPreviewZoomLayerSize();
+        updateTextOverlayPosition();
+        updateSelectionOverlay();
+      }
+
+      function stepPreviewZoom(direction) {
+        const index = previewZoomIndex();
+        const nextIndex = Math.max(0, Math.min(PREVIEW_ZOOM_LEVELS.length - 1, index + direction));
+        if (nextIndex === index) {
+          return;
+        }
+        applyPreviewZoom(PREVIEW_ZOOM_LEVELS[nextIndex]);
+      }
+
       function updateStats(editableCount, imageCount) {
         const text = sourceInput.value;
         sourceStats.textContent = `${text.length.toLocaleString()} 字符`;
@@ -3906,10 +4097,12 @@
           renderStatus.textContent = "等待导入 HTML";
           updateStats(0, 0);
         }
+        schedulePreviewZoomSync();
       }
 
       function setLayoutCollapsed(collapsed) {
         app.classList.toggle("layout-collapsed", Boolean(collapsed));
+        schedulePreviewZoomSync();
       }
 
       function openSourceDrawer() {
@@ -4515,6 +4708,21 @@
           html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}:not([data-html-report-live-editor-preserve-position="true"]) {
             position: relative !important;
           }
+          html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}[data-html-report-live-editor-stacked-page="true"] {
+            display: block !important;
+            position: relative !important;
+            left: auto !important;
+            right: auto !important;
+            top: auto !important;
+            bottom: auto !important;
+            transform: none !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            pointer-events: auto !important;
+          }
+          html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}[data-html-report-live-editor-stacked-page="true"][hidden] {
+            display: block !important;
+          }
           html.html-report-live-editor-managed-document ${MANAGED_PAGE_SELECTOR}.slide {
             display: grid !important;
           }
@@ -4667,10 +4875,12 @@
 
         const frameRect = previewFrame.getBoundingClientRect();
         const rect = target.getBoundingClientRect();
-        textEditOverlay.style.left = `${frameRect.left + rect.left}px`;
-        textEditOverlay.style.top = `${frameRect.top + rect.top}px`;
+        textEditOverlay.style.left = `${frameRect.left + rect.left * previewZoom}px`;
+        textEditOverlay.style.top = `${frameRect.top + rect.top * previewZoom}px`;
         textEditOverlay.style.width = `${Math.max(32, rect.width)}px`;
         textEditOverlay.style.height = `${Math.max(24, rect.height)}px`;
+        textEditOverlay.style.transform = `scale(${previewZoom})`;
+        textEditOverlay.style.transformOrigin = "0 0";
       }
 
       function overlayTextOffsetFromPoint(frameX, frameY) {
@@ -4679,12 +4889,12 @@
         const frameRect = previewFrame.getBoundingClientRect();
         const overlayRect = textEditOverlay.getBoundingClientRect();
         const computed = window.getComputedStyle(textEditOverlay);
-        const pageX = frameRect.left + frameX;
-        const pageY = frameRect.top + frameY;
-        const paddingLeft = cssPx(computed.paddingLeft);
-        const paddingRight = cssPx(computed.paddingRight);
-        const paddingTop = cssPx(computed.paddingTop);
-        const lineHeight = computedLineHeight(computed);
+        const pageX = frameRect.left + frameX * previewZoom;
+        const pageY = frameRect.top + frameY * previewZoom;
+        const paddingLeft = cssPx(computed.paddingLeft) * previewZoom;
+        const paddingRight = cssPx(computed.paddingRight) * previewZoom;
+        const paddingTop = cssPx(computed.paddingTop) * previewZoom;
+        const lineHeight = computedLineHeight(computed) * previewZoom;
         const usableWidth = Math.max(1, overlayRect.width - paddingLeft - paddingRight);
         const rawLine = Math.floor((pageY - overlayRect.top - paddingTop) / lineHeight);
         const lineIndex = Math.max(0, Math.min(lines.length - 1, rawLine));
@@ -4720,6 +4930,7 @@
         activeTextOverlay = null;
         textEditOverlay.hidden = true;
         textEditOverlay.value = "";
+        textEditOverlay.style.transform = "";
 
         if (target && target.isConnected) {
           target.removeAttribute("data-html-report-live-editor-text-editing");
@@ -5738,7 +5949,7 @@
           if (managedPage) {
             return managedPage;
           }
-          const explicitPage = el.closest(`${MANAGED_PAGE_SELECTOR}, .slide, .page, [data-screen-label], .dashboard, main`);
+          const explicitPage = el.closest(`${MANAGED_PAGE_SELECTOR}, .slide, .page, ${TAB_PAGE_CANDIDATE_SELECTOR}, [data-screen-label], .dashboard, main`);
           if (explicitPage && explicitPage !== doc.body && canContainInsertedBlock(explicitPage)) {
             return explicitPage;
           }
@@ -6437,6 +6648,27 @@
           !(isTextOverlayTarget && activeTextOverlay) &&
           (!isNativeField || isInspectorControl || isPreviewDoc);
 
+        if (isMeta && !isSourceEditingTarget && !isTextOverlayTarget && (key === "+" || key === "=")) {
+          event.preventDefault();
+          event.stopPropagation();
+          stepPreviewZoom(1);
+          return;
+        }
+
+        if (isMeta && !isSourceEditingTarget && !isTextOverlayTarget && key === "-") {
+          event.preventDefault();
+          event.stopPropagation();
+          stepPreviewZoom(-1);
+          return;
+        }
+
+        if (isMeta && !isSourceEditingTarget && !isTextOverlayTarget && key === "0") {
+          event.preventDefault();
+          event.stopPropagation();
+          applyPreviewZoom(1);
+          return;
+        }
+
         if (isMeta && key.toLowerCase() === "a" && activeTextEditRoot && activeTextEditRoot.isConnected && !isNativeField) {
           if (selectEditableContents(activeTextEditRoot)) {
             event.preventDefault();
@@ -6958,7 +7190,7 @@
           return;
         }
         const rect = previewFrame.getBoundingClientRect();
-        rememberFormatPainterPoint(doc, event.clientX - rect.left, event.clientY - rect.top);
+        rememberFormatPainterPoint(doc, (event.clientX - rect.left) / previewZoom, (event.clientY - rect.top) / previewZoom);
       }
 
       function refreshFormatPainterCursorAtPoint(doc, clientX, clientY) {
@@ -7997,7 +8229,8 @@
         if (!source.trim()) {
           clearSelection();
           app.classList.remove("pm-template-edit-visible");
-          previewFrame.style.height = "";
+          setPreviewFrameHeight();
+          setPreviewFrameMinWidth();
           previewFrame.style.pointerEvents = "";
           previewFrame.removeAttribute("data-edit-bootstrap-id");
           previewFrame.removeAttribute("srcdoc");
@@ -8013,7 +8246,8 @@
         setEditorReady(true);
         clearSelection();
         app.classList.remove("pm-template-edit-visible");
-        previewFrame.style.height = "";
+        setPreviewFrameHeight();
+        setPreviewFrameMinWidth();
         if (bootstrappingEdit) {
           previewFrame.dataset.editBootstrapId = renderId;
           previewFrame.style.pointerEvents = "none";
@@ -8032,17 +8266,18 @@
           return;
         }
         if (previewMode === "edit" && isPmIssueTemplateDocument(doc)) {
-          previewFrame.style.height = "";
+          setPreviewFrameHeight();
           return;
         }
         const managedPages = getManagedPages(doc);
+        setPreviewFrameMinWidth(managedPages.length ? 901 : 0);
         if (managedPages.length) {
           const bodyRect = doc.body.getBoundingClientRect();
           const pageRects = managedPages.map((page) => page.getBoundingClientRect());
           const bottom = Math.max(...pageRects.map((rect) => rect.bottom), bodyRect.bottom);
           const top = Math.min(...pageRects.map((rect) => rect.top), bodyRect.top);
           const height = Math.ceil(bottom - top + 48);
-          previewFrame.style.height = `${Math.max(height, previewFrame.clientHeight)}px`;
+          setPreviewFrameHeight(Math.max(height, previewFrame.clientHeight));
           return;
         }
         const height = Math.max(
@@ -8050,7 +8285,7 @@
           doc.body.scrollHeight,
           previewFrame.clientHeight
         );
-        previewFrame.style.height = `${height}px`;
+        setPreviewFrameHeight(height);
       }
 
       function schedulePreviewFrameResize(doc) {
@@ -8488,6 +8723,24 @@
         return ["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"].includes(node.tagName);
       }
 
+      function isTabPageCandidate(page) {
+        return Boolean(page && page.nodeType === Node.ELEMENT_NODE && page.matches(TAB_PAGE_CANDIDATE_SELECTOR));
+      }
+
+      function hasHiddenManagedPageInSet(page) {
+        const doc = page && page.ownerDocument;
+        if (!doc) {
+          return false;
+        }
+        const pages = [...doc.querySelectorAll(MANAGED_PAGE_SELECTOR)];
+        return pages.length > 1 && pages.some((item) => item.hidden || item.hasAttribute("hidden"));
+      }
+
+      function shouldStackManagedPageForEdit(page, position) {
+        return isTabPageCandidate(page) ||
+          ((position === "absolute" || position === "fixed") && hasHiddenManagedPageInSet(page));
+      }
+
       function markGenericManagedPage(page) {
         if (!page || page.nodeType !== Node.ELEMENT_NODE) {
           return;
@@ -8502,9 +8755,14 @@
         }
         const win = page.ownerDocument && page.ownerDocument.defaultView;
         const position = win ? win.getComputedStyle(page).position : "";
-        if (position === "absolute" || position === "fixed") {
+        if (shouldStackManagedPageForEdit(page, position)) {
+          page.setAttribute("data-html-report-live-editor-stacked-page", "true");
+          page.removeAttribute("data-html-report-live-editor-preserve-position");
+        } else if (position === "absolute" || position === "fixed") {
+          page.removeAttribute("data-html-report-live-editor-stacked-page");
           page.setAttribute("data-html-report-live-editor-preserve-position", "true");
         } else {
+          page.removeAttribute("data-html-report-live-editor-stacked-page");
           page.removeAttribute("data-html-report-live-editor-preserve-position");
         }
       }
@@ -8521,9 +8779,16 @@
           return [];
         }
         const bodyRoots = [...doc.body.children].filter((node) => !isIgnoredGenericBodyChild(node));
+        const tabPages = compactTopLevelPages([...doc.querySelectorAll(TAB_PAGE_CANDIDATE_SELECTOR)]);
+        if (tabPages.length > 1) {
+          return tabPages;
+        }
         const explicit = compactTopLevelPages([...doc.querySelectorAll(GENERIC_PAGE_CANDIDATE_SELECTOR)]);
         if (bodyRoots.length === 1) {
           const root = bodyRoots[0];
+          if (explicit.length > 1 && explicit.every((page) => page.parentElement === root)) {
+            return explicit;
+          }
           if (explicit.length && explicit.every((page) => page === root || root.contains(page)) && !explicit.includes(root)) {
             return [root];
           }
@@ -9477,6 +9742,7 @@
         previewFrame.style.pointerEvents = "";
         prepareManagedPagesForEdit(doc);
         const hasManagedPages = syncManagedPageChrome(doc);
+        setPreviewFrameMinWidth(hasManagedPages ? 901 : 0);
         renderPageManager(doc);
         doc.addEventListener("pointerdown", () => {
           if (previewMode === "edit" && hasManagedPages) {
@@ -9516,7 +9782,7 @@
           updateStats(editableCount, imageCount);
           renderStatus.textContent = "编辑预览就绪";
         } else {
-          previewFrame.style.height = "";
+          setPreviewFrameHeight();
           applyVisualPatchesSoon(doc);
           updateStats(0, doc.images.length);
           renderStatus.textContent = "交互预览就绪";
@@ -9533,6 +9799,7 @@
         } else {
           imageStats.classList.remove("empty-note");
         }
+        schedulePreviewFrameResize(doc);
       });
 
       imagePicker.addEventListener("change", () => {
@@ -9590,6 +9857,9 @@
         event.stopPropagation();
         toggleTypographyPreset();
       });
+      zoomOutButton.addEventListener("click", () => stepPreviewZoom(-1));
+      zoomInButton.addEventListener("click", () => stepPreviewZoom(1));
+      zoomResetButton.addEventListener("click", () => applyPreviewZoom(1));
 
       textEditOverlay.addEventListener("keydown", (event) => {
         if (!activeTextOverlay) {
@@ -9623,7 +9893,11 @@
         }
       });
 
-      window.addEventListener("resize", updateTextOverlayPosition);
+      window.addEventListener("resize", () => {
+        syncPreviewZoomLayerSize();
+        updateTextOverlayPosition();
+        updateSelectionOverlay();
+      });
       window.addEventListener("scroll", updateTextOverlayPosition, true);
 
       modeButtons.forEach((button) => {
@@ -9809,6 +10083,7 @@
       });
 
       applyTheme(currentTheme);
+      applyPreviewZoom(previewZoom, { persist: false });
       localStorage.removeItem(LEGACY_STORAGE_KEY);
       sourceInput.value = "";
       setEditorReady(false);
